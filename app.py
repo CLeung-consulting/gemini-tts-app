@@ -72,13 +72,15 @@ if st.button("Generate Soundtrack", type="primary"):
                 # Prepare translation context if requested
                 prompt_prefix = ""
                 if target_language != "Keep Original Language":
-                    prompt_prefix = f"Please read out the following content clearly in {target_language}:\n\n"
+                    prompt_prefix = f"Please translate and read out the following content clearly in {target_language}:\n\n"
+                else:
+                    prompt_prefix = "Please read out the following content clearly:\n\n"
                 
                 full_prompt = prompt_prefix + transcript_text
 
-                # Request TTS output audio (PCM / WAV stream format)
+                # Request AUDIO output using gemini-2.0-flash
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-2.0-flash',
                     contents=full_prompt,
                     config=types.GenerateContentConfig(
                         response_modalities=["AUDIO"],
@@ -92,28 +94,36 @@ if st.button("Generate Soundtrack", type="primary"):
                     )
                 )
 
-                # Extract audio bytes from response
+                # Extract audio bytes and MIME type from response parts
                 audio_bytes = None
-                for part in response.candidates[0].content.parts:
-                    if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
-                        audio_bytes = part.inline_data.data
-                        break
+                mime_type = "audio/wav"  # Default fallback
+
+                if response.candidates and response.candidates[0].content.parts:
+                    for part in response.candidates[0].content.parts:
+                        if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
+                            audio_bytes = part.inline_data.data
+                            mime_type = part.inline_data.mime_type
+                            break
 
                 if audio_bytes:
                     st.success("Audio soundtrack generated successfully!")
                     
+                    # Determine file extension based on MIME type returned by the API
+                    file_ext = "pcm" if "pcm" in mime_type else ("wav" if "wav" in mime_type else "mp3")
+                    file_name = f"gemini_soundtrack.{file_ext}"
+
                     # Web app Audio Player
-                    st.audio(audio_bytes, format="audio/mp3")
+                    st.audio(audio_bytes, format=mime_type)
 
                     # Download button
                     st.download_button(
-                        label="📥 Download Audio (.mp3)",
+                        label=f"📥 Download Audio (.{file_ext})",
                         data=audio_bytes,
-                        file_name="gemini_soundtrack.mp3",
-                        mime="audio/mp3"
+                        file_name=file_name,
+                        mime=mime_type
                     )
                 else:
-                    st.error("Model responded, but no raw audio data was returned. Check model TTS compatibility.")
+                    st.error("Model responded, but no raw audio data was returned. Ensure the prompt content is valid.")
 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
